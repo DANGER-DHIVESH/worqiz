@@ -1,15 +1,29 @@
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
+import API from "../api";
 import { useAuth } from "../context/AuthContext";
 
 export default function Login() {
   const navigate = useNavigate();
   const { login } = useAuth();
-  const [role, setRole] = useState("worker");
 
-  const handleLogin = () => {
-    login(role);
-    navigate(`/${role}`);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  const handleLogin = async () => {
+    try {
+      const res = await API.post("/login", {
+        email,
+        password,
+      });
+
+      login(res.data.user, res.data.token);
+
+      navigate(`/${res.data.user.role}`);
+
+    } catch (error) {
+      alert(error.response?.data?.message || "Login Failed");
+    }
   };
 
   return (
@@ -17,15 +31,19 @@ export default function Login() {
       <div className="bg-white p-8 rounded shadow w-80 space-y-4">
         <h1 className="text-2xl font-bold text-center">WORQIZ Login</h1>
 
-        <select
+        <input
+          type="email"
+          placeholder="Email"
           className="w-full border p-2 rounded"
-          value={role}
-          onChange={(e) => setRole(e.target.value)}
-        >
-          <option value="worker">Worker</option>
-          <option value="agent">Agent</option>
-          <option value="owner">Shop Owner</option>
-        </select>
+          onChange={(e) => setEmail(e.target.value)}
+        />
+
+        <input
+          type="password"
+          placeholder="Password"
+          className="w-full border p-2 rounded"
+          onChange={(e) => setPassword(e.target.value)}
+        />
 
         <button
           onClick={handleLogin}

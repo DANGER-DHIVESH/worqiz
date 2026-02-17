@@ -3,13 +3,19 @@ import { createContext, useContext, useState } from "react";
 const AuthContext = createContext();
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(
+    JSON.parse(localStorage.getItem("user"))
+  );
 
-  const login = (role) => {
-    setUser({ role });
+  const login = (userData, token) => {
+    localStorage.setItem("token", token);
+    localStorage.setItem("user", JSON.stringify(userData));
+    setUser(userData);
   };
 
   const logout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
     setUser(null);
   };
 

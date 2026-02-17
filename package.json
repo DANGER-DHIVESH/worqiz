@@ -10,6 +10,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "axios": "^1.13.5",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "mongoose": "^9.2.1",
+    "razorpay": "^2.9.6",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.13.0"
@@ -26,5 +32,20 @@
     "globals": "^16.5.0",
     "tailwindcss": "^4.1.18",
     "vite": "^7.3.1"
-  }
+  },
+  "description": "WORQIZ backend server",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DANGER-DHIVESH/worqiz.git"
+  },
+  "keywords": [
+    "worqiz"
+  ],
+  "author": "KABISH.S",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/DANGER-DHIVESH/worqiz/issues"
+  },
+  "homepage": "https://github.com/DANGER-DHIVESH/worqiz#readme"
 }
