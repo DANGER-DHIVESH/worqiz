@@ -7,30 +7,20 @@ require("dotenv").config();
 
 const auth = require("./middleware/auth");
 const User = require("./models/user");
-const Transaction = require("./models/transaction");
+const Job = require("./models/job");
 
 const app = express();
 
-/* =============================
-   Middleware
-============================= */
 app.use(cors());
 app.use(express.json());
 
 /* =============================
-   MongoDB Connection
+   DB CONNECTION
 ============================= */
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB Connected ✅"))
   .catch((err) => console.log("MongoDB Error ❌", err));
-
-/* =============================
-   Test Route
-============================= */
-app.get("/", (req, res) => {
-  res.json({ message: "WORQIZ Backend Running 🚀" });
-});
 
 /* =============================
    REGISTER
@@ -39,32 +29,23 @@ app.post("/register", async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
 
-    if (!name || !email || !password || !role) {
-      return res.status(400).json({ message: "All fields required" });
-    }
+    const existing = await User.findOne({ email });
+    if (existing)
+      return res.status(400).json({ message: "User exists" });
 
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ message: "User already exists" });
-    }
+    const hashed = await bcrypt.hash(password, 10);
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const user = new User({
+    await User.create({
       name,
       email,
-      password: hashedPassword,
+      password: hashed,
       role,
+      walletBalance: 0,
     });
 
-    await user.save();
-
-    res.status(201).json({
-      message: "User Registered Successfully ✅",
-    });
-
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(201).json({ message: "Registered ✅" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -75,19 +56,13 @@ app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({ message: "Email and password required" });
-    }
-
     const user = await User.findOne({ email });
-    if (!user) {
+    if (!user)
       return res.status(400).json({ message: "User not found" });
-    }
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ message: "Invalid password" });
-    }
+    const match = await bcrypt.compare(password, user.password);
+    if (!match)
+      return res.status(400).json({ message: "Wrong password" });
 
     const token = jwt.sign(
       { id: user._id },
@@ -96,121 +71,116 @@ app.post("/login", async (req, res) => {
     );
 
     res.json({
-      message: "Login Successful ✅",
       token,
       user: {
         id: user._id,
         name: user.name,
-        email: user.email,
         role: user.role,
         walletBalance: user.walletBalance,
       },
     });
-
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
 /* =============================
-   CREDIT WALLET (Protected)
+   CREATE JOB
 ============================= */
-app.post("/credit-wallet", auth, async (req, res) => {
+app.post("/create-job", auth, async (req, res) => {
   try {
-    const { amount } = req.body;
-    const userId = req.user.id;
+    const { title, description, salary, location, contactNumber } = req.body;
 
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ message: "Valid amount required" });
-    }
+    const user = await User.findById(req.user.id);
 
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
+    if (user.role !== "agent" && user.role !== "owner")
+      return res.status(403).json({ message: "Not allowed ❌" });
 
-    user.walletBalance += Number(amount);
-    user.totalEarnings += Number(amount);
-    await user.save();
-
-    await Transaction.create({
-      userId: user._id,
-      type: "credit",
-      amount: Number(amount),
+    const job = await Job.create({
+      title,
+      description,
+      salary,
+      location,
+      contactNumber,
+      postedBy: user._id,
+      applicants: [],
+      status: "open",
     });
 
-    res.json({
-      message: "Wallet Credited ✅",
-      walletBalance: user.walletBalance,
-    });
-
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.json(job);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
 /* =============================
-   WITHDRAW (Protected)
+   APPLY JOB
 ============================= */
-app.post("/withdraw", auth, async (req, res) => {
+app.post("/apply-job/:id", auth, async (req, res) => {
   try {
-    const { amount } = req.body;
-    const userId = req.user.id;
+    const job = await Job.findById(req.params.id);
+    const user = await User.findById(req.user.id);
 
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ message: "Valid amount required" });
-    }
+    if (!job) return res.status(404).json({ message: "Job not found" });
+    if (user.role !== "worker")
+      return res.status(403).json({ message: "Only workers allowed" });
 
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
+    if (job.applicants.includes(user._id))
+      return res.status(400).json({ message: "Already applied" });
 
-    if (user.walletBalance < amount) {
-      return res.status(400).json({ message: "Insufficient Balance ❌" });
-    }
+    job.applicants.push(user._id);
+    await job.save();
 
-    user.walletBalance -= Number(amount);
-    await user.save();
-
-    await Transaction.create({
-      userId: user._id,
-      type: "withdraw",
-      amount: Number(amount),
-    });
-
-    res.json({
-      message: "Withdrawal Successful ✅",
-      walletBalance: user.walletBalance,
-    });
-
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.json({ message: "Applied ✅" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
 /* =============================
-   TRANSACTION HISTORY (Protected)
+   ACCEPT WORKER
 ============================= */
-app.get("/transactions", auth, async (req, res) => {
+app.post("/accept-job/:jobId/:workerId", auth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const { jobId, workerId } = req.params;
 
-    const transactions = await Transaction.find({ userId })
-      .sort({ createdAt: -1 });
+    const job = await Job.findById(jobId);
+    const owner = await User.findById(req.user.id);
 
-    res.json(transactions);
+    if (!job) return res.status(404).json({ message: "Job not found" });
 
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    if (owner.role !== "agent" && owner.role !== "owner")
+      return res.status(403).json({ message: "Not allowed ❌" });
+
+    if (!job.applicants.includes(workerId))
+      return res.status(400).json({ message: "Worker not applied" });
+
+    job.assignedTo = workerId;
+    job.status = "assigned";
+
+    await job.save();
+
+    res.json({ message: "Worker Accepted ✅" });
+  } catch (err) {
+    console.log("ACCEPT ERROR:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 
 /* =============================
-   START SERVER
+   GET JOBS
 ============================= */
+app.get("/jobs", async (req, res) => {
+  const jobs = await Job.find()
+    .populate("postedBy", "name role")
+    .populate("applicants", "name")
+    .sort({ createdAt: -1 });
+
+  res.json(jobs);
+});
+
+/* ============================= */
 const PORT = process.env.PORT || 5000;
-
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+app.listen(PORT, () =>
+  console.log(`Server running on port ${PORT}`)
+);
